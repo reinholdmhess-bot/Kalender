@@ -1,0 +1,31 @@
+:root{--bg:#f6f9fb;--row1:#ffffff;--row2:#eef5fb;--accent:#3b82f6;--holiday:#fde68a;--birthday:#bbf7d0;--weekend:#d4e6ff}
+*{box-sizing:border-box}
+body{font-family:Inter,Arial,Helvetica,sans-serif;margin:0;background:var(--bg);color:#0f172a}
+.top{display:flex;gap:8px;align-items:center;padding:10px;background:#e6eefc;border-bottom:1px solid #d0e0fb}
+.top h1{flex:1;text-align:center;margin:0}
+button{background:var(--accent);color:white;border:0;padding:8px 12px;border-radius:6px;cursor:pointer}
+#jumpToDate{padding:6px 8px;border:1px solid #ccc;border-radius:4px;font-size:0.9rem}
+#calendar{display:flex;gap:12px;padding:12px;height:calc(100vh - 80px)}
+.month-list{flex:1;overflow-y:auto;border:1px solid #d0e0fb;border-radius:6px;background:white}
+.day-row{display:flex;align-items:stretch;padding:8px;border-bottom:1px solid #eee;min-height:50px;user-select:none;cursor:pointer}
+.day-row:hover{background:#f9fafc}
+.kw-cell{width:40px;text-align:center;font-size:0.75rem;color:#999;border-right:1px solid #ddd;padding:4px}
+.day-date{width:60px;padding:4px 6px;font-weight:600;font-size:0.9rem}
+.day-date-day{display:block;font-size:0.8rem;color:#666}
+.weekend .day-date{background:var(--weekend)}
+.today{background:#dbeafe !important;border-left:4px solid #3b82f6}
+.day-content{flex:1;display:flex;justify-content:space-between;align-items:center;padding:0 8px;overflow-x:auto}
+.event-list{display:flex;gap:6px;align-items:center;white-space:nowrap}
+.event-pill{padding:3px 6px;border-radius:10px;font-size:0.8rem;background:#eee;flex-shrink:0}
+.holiday{background:var(--holiday);color:#000}
+.birthday{background:var(--birthday);color:#000}
+.day-panel{width:300px;background:white;border-radius:8px;padding:12px;box-shadow:0 6px 20px rgba(2,6,23,0.08);overflow-y:auto;max-height:calc(100vh - 100px)}
+#dayEvents{list-style:none;padding:0;margin:0}
+#dayEvents li{padding:8px;border-bottom:1px solid #f0f0f0;font-size:0.9rem;cursor:pointer;user-select:none}
+#dayEvents li:hover{background:#f0f0f0}
+.modal{position:fixed;inset:0;display:grid;place-items:center;background:rgba(0,0,0,0.35);z-index:1000}
+.hidden{display:none}
+.modal-content{background:white;padding:16px;border-radius:8px;width:320px;display:flex;flex-direction:column;gap:8px}
+.modal-content label{display:flex;flex-direction:column;font-size:0.9rem}
+.actions{display:flex;gap:8px;justify-content:flex-end}
+@media(max-width:900px){#calendar{flex-direction:column} .day-panel{width:100%;max-height:none}}
