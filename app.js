@@ -1,21 +1,130 @@
-/* Simple calendar app
- - month list with continuous days
- - events stored in localStorage
- - yearly repetition and birthdays with age
- - Germany (Baden-Wuerttemberg) holidays computed
- - KW-Nummern, durchscrollbar, Doppelklick-Input, Import/Export
- - Infinite Scroll, dynamische Monatsüberschrift
+/* Kalender App mit Firebase Cloud Sync
+ - Termine synchronisieren zwischen Geräten
+ - Firebase Firestore für Cloud-Speicherung
+ - localStorage Fallback (Offline-Modus)
+ - Anonyme Authentifizierung
 */
+
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, getDocs, writeBatch } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+import { firebaseConfig } from './firebase-config.js';
+
+// Firebase Init
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 
 const STORAGE_KEY = 'local_calendar_events_v1';
 let events = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
 let viewDate = new Date();
-let loadedMonths = new Set(); // track which months are loaded
+let loadedMonths = new Set();
+let userId = null;
+let unsubscribe = null;
+let isOnline = true;
 
-// helpers
-function toISODate(d){ const y=d.getFullYear(),m=d.getMonth()+1,dd=d.getDate(); return `${y}-${String(m).padStart(2,'0')}-${String(dd).padStart(2,'0')}` }
-function load(){ events = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') }
-function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(events)) }
+// UI Elements
+const monthList = document.getElementById('monthList');
+const monthsContainer = document.getElementById('monthsContainer');
+const monthTitle = document.getElementById('monthTitle');
+const dayEvents = document.getElementById('dayEvents');
+const modal = document.getElementById('eventModal');
+const form = document.getElementById('eventForm');
+const addBtn = document.getElementById('addEvent');
+const cancelBtn = document.getElementById('cancel');
+const syncStatus = document.getElementById('syncStatus');
+
+// Authentifizierung & Firebase-Listener
+async function initFirebase() {
+  try {
+    // Anonyme Anmeldung
+    const result = await signInAnonymously(auth);
+    userId = result.user.uid;
+    console.log('Angemeldet als:', userId);
+    
+    // Echtzeit-Listener für Events
+    const eventsRef = collection(db, 'users', userId, 'events');
+    const q = query(eventsRef);
+    
+    unsubscribe = onSnapshot(q, (snapshot) => {
+      events = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+      renderMonths(viewDate);
+      updateSyncStatus('✓ Synchronisiert', 'green');
+    }, (error) => {
+      console.warn('Firebase Fehler:', error);
+      isOnline = false;
+      updateSyncStatus('⚠ Offline-Modus', 'orange');
+      // Lokale Daten laden bei Offline
+      events = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      renderMonths(viewDate);
+    });
+  } catch (error) {
+    console.error('Auth Fehler:', error);
+    updateSyncStatus('✗ Offline-Modus', 'red');
+    isOnline = false;
+    events = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    renderMonths(viewDate);
+  }
+}
+
+// Event speichern (Cloud + Local)
+async function saveEvent(eventData) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+  
+  if (!isOnline || !userId) {
+    renderMonths(viewDate);
+    return;
+  }
+  
+  try {
+    const eventsRef = collection(db, 'users', userId, 'events');
+    await addDoc(eventsRef, eventData);
+    updateSyncStatus('↻ Speichern...', 'blue');
+  } catch (error) {
+    console.error('Fehler beim Speichern:', error);
+    updateSyncStatus('⚠ Lokal gespeichert', 'orange');
+    isOnline = false;
+  }
+}
+
+// Event löschen
+async function deleteEventFirebase(eventId) {
+  events = events.filter(e => e.id !== eventId);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+  
+  if (!isOnline || !userId) {
+    renderMonths(viewDate);
+    return;
+  }
+  
+  try {
+    const eventRef = doc(db, 'users', userId, 'events', eventId);
+    await deleteDoc(eventRef);
+    updateSyncStatus('↻ Löschen...', 'blue');
+  } catch (error) {
+    console.error('Fehler beim Löschen:', error);
+    updateSyncStatus('⚠ Lokal gelöscht', 'orange');
+    isOnline = false;
+  }
+}
+
+// Sync-Status anzeigen
+function updateSyncStatus(text, color) {
+  if (syncStatus) {
+    syncStatus.textContent = text;
+    syncStatus.style.color = color;
+  }
+}
+
+// Hilfsfunktionen
+function toISODate(d) {
+  const y = d.getFullYear(), m = d.getMonth() + 1, dd = d.getDate();
+  return `${y}-${String(m).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+}
 function getWeekNumber(d){
   const first = new Date(d.getFullYear(), 0, 1);
   const pre = first.getDay();
@@ -144,22 +253,35 @@ function appendMonthToContainer(cur, holidays, curYear, curMonth){
     // Single events on left, yearly on right
     dayEventsList.forEach(ev=>{
       if(ev.repeat==='yearly' || ev.birthYear){
-        const pill = document.createElement('span'); pill.className='event-pill';
-        if(ev.birthYear){ 
-          pill.classList.add('birthday'); 
-          const age = curDay.getFullYear()-Number(ev.birthYear); 
-          pill.textContent = ev.title + (isFinite(age)? ' ('+age+')':''); 
+        const pill = document.createElement('span');
+        pill.className='event-pill';
+        // attach event id for deletion
+        pill.setAttribute('data-event-id', ev.id);
+        if(ev.birthYear){
+          pill.classList.add('birthday');
+          const age = curDay.getFullYear()-Number(ev.birthYear);
+          pill.textContent = ev.title + (isFinite(age)? ' ('+age+')':'');
         } else {
           pill.textContent = ev.title;
         }
+        // same context menu handling as single events
+        pill.style.cursor = 'pointer';
+        pill.addEventListener('contextmenu', e=>{
+          e.preventDefault();
+          const menu = document.getElementById('contextMenu');
+          menu.style.left = e.clientX + 'px';
+          menu.style.top = e.clientY + 'px';
+          menu.classList.remove('hidden');
+          menu.currentEventId = ev.id;
+        });
         right.appendChild(pill);
       } else {
         // single event - show on left
-        const evt = document.createElement('span'); 
-        evt.className='event-pill single-event'; 
+        const evt = document.createElement('span');
+        evt.className='event-pill single-event';
         evt.style.backgroundColor = '#fed7aa'; // orange statt blau
-        evt.style.color = '#92400e'; 
-        evt.style.fontWeight = '600'; 
+        evt.style.color = '#92400e';
+        evt.style.fontWeight = '600';
         evt.style.cursor = 'pointer';
         evt.textContent = (ev.time? ev.time + ' ':'') + ev.title;
         evt.setAttribute('data-event-id', ev.id);
@@ -219,14 +341,13 @@ function openDay(d){
 }
 
 function deleteEvent(eventId){
-  events = events.filter(e => e.id !== eventId);
-  save();
+  deleteEventFirebase(eventId);
   // Refresh with current viewDate
   renderMonths(viewDate);
   // Open the day that was previously shown (get from first event)
   const firstLi = dayEvents.querySelector('li');
   if(firstLi){
-    const evId = Number(firstLi.getAttribute('data-event-id'));
+    const evId = firstLi.getAttribute('data-event-id');
     const ev = events.find(e => e.id === evId);
     if(ev){
       const d = new Date(ev.date);
@@ -253,17 +374,27 @@ function openEventForm(d){
 addBtn.addEventListener('click', ()=> openEventForm(viewDate));
 cancelBtn.addEventListener('click', ()=> modal.classList.add('hidden'));
 
-form.addEventListener('submit', e=>{
+form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(form);
-  const ev = { id: Date.now(), title: fd.get('title'), date: fd.get('date'), time: fd.get('time')||'', repeat: fd.get('repeat'), desc: fd.get('desc')||'', birthYear: fd.get('birthYear')||'' };
-  events.push(ev); save(); modal.classList.add('hidden'); renderMonths(viewDate);
+  const ev = {
+    title: fd.get('title'),
+    date: fd.get('date'),
+    time: fd.get('time') || '',
+    repeat: fd.get('repeat'),
+    desc: fd.get('desc') || '',
+    birthYear: fd.get('birthYear') || '',
+    createdAt: new Date().toISOString()
+  };
+  events.push(ev);
+  await saveEvent(ev);
+  modal.classList.add('hidden');
 });
 
 // import/export
-document.getElementById('exportBtn').addEventListener('click', ()=>{
+document.getElementById('exportBtn').addEventListener('click', () => {
   const json = JSON.stringify(events, null, 2);
-  const blob = new Blob([json], {type: 'application/json'});
+  const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -272,21 +403,27 @@ document.getElementById('exportBtn').addEventListener('click', ()=>{
   URL.revokeObjectURL(url);
 });
 
-document.getElementById('importBtn').addEventListener('click', ()=> document.getElementById('importFile').click());
-document.getElementById('importFile').addEventListener('change', e=>{
+document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importFile').click());
+
+document.getElementById('importFile').addEventListener('change', async (e) => {
   const file = e.target.files[0];
-  if(!file) return;
+  if (!file) return;
   const reader = new FileReader();
-  reader.onload = ev => {
+  reader.onload = async (ev) => {
     try {
       const imported = JSON.parse(ev.target.result);
-      if(Array.isArray(imported)){
-        events = imported;
-        save();
-        renderMonths(viewDate);
+      if (Array.isArray(imported)) {
+        for (const item of imported) {
+          events.push(item);
+          await saveEvent(item);
+        }
         alert('Termine importiert!');
-      } else alert('Ungültiges Format');
-    } catch(err){ alert('Fehler beim Importieren: ' + err.message); }
+      } else {
+        alert('Ungültiges Format');
+      }
+    } catch (err) {
+      alert('Fehler beim Importieren: ' + err.message);
+    }
   };
   reader.readAsText(file);
 });
@@ -413,7 +550,8 @@ document.addEventListener('keydown', e=>{
 });
 
 // init
-load(); renderMonths(viewDate); openDay(new Date());
+renderMonths(viewDate);
+initFirebase();
 
 // scroll to today on load
 setTimeout(()=>{
@@ -435,6 +573,3 @@ setTimeout(()=>{
     }
   }
 }, 50);
-
-// expose for debugging
-window._cal = {events, save, load, renderMonth};
