@@ -6,8 +6,8 @@
 */
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
-import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, getDocs, writeBatch } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 
 // Firebase Init
@@ -16,6 +16,8 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const STORAGE_KEY = 'local_calendar_events_v1';
+// Ensure a clean start – remove any stale cached events
+localStorage.removeItem(STORAGE_KEY);
 let events = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
 let viewDate = new Date();
 let loadedMonths = new Set();
@@ -37,20 +39,15 @@ const syncStatus = document.getElementById('syncStatus');
 // Authentifizierung & Firebase-Listener
 async function initFirebase() {
   try {
-    // Anonyme Anmeldung
     const result = await signInAnonymously(auth);
     userId = result.user.uid;
     console.log('Angemeldet als:', userId);
-    
-    // Echtzeit-Listener für Events
+
     const eventsRef = collection(db, 'users', userId, 'events');
     const q = query(eventsRef);
-    
+
     unsubscribe = onSnapshot(q, (snapshot) => {
-      events = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
       renderMonths(viewDate);
       updateSyncStatus('✓ Synchronisiert', 'green');
@@ -58,7 +55,6 @@ async function initFirebase() {
       console.warn('Firebase Fehler:', error);
       isOnline = false;
       updateSyncStatus('⚠ Offline-Modus', 'orange');
-      // Lokale Daten laden bei Offline
       events = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
       renderMonths(viewDate);
     });
@@ -74,12 +70,10 @@ async function initFirebase() {
 // Event speichern (Cloud + Local)
 async function saveEvent(eventData) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
-  
   if (!isOnline || !userId) {
     renderMonths(viewDate);
     return;
   }
-  
   try {
     const eventsRef = collection(db, 'users', userId, 'events');
     await addDoc(eventsRef, eventData);
@@ -95,12 +89,10 @@ async function saveEvent(eventData) {
 async function deleteEventFirebase(eventId) {
   events = events.filter(e => e.id !== eventId);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
-  
   if (!isOnline || !userId) {
     renderMonths(viewDate);
     return;
   }
-  
   try {
     const eventRef = doc(db, 'users', userId, 'events', eventId);
     await deleteDoc(eventRef);
@@ -125,16 +117,14 @@ function toISODate(d) {
   const y = d.getFullYear(), m = d.getMonth() + 1, dd = d.getDate();
   return `${y}-${String(m).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
 }
-function getWeekNumber(d){
+function getWeekNumber(d) {
   const first = new Date(d.getFullYear(), 0, 1);
   const pre = first.getDay();
   first.setDate(first.getDate() - pre + 1);
   const diff = d - first;
   return Math.floor(diff / 604800000) + 1;
 }
-
-// Easter calculation (Anonymous Gregorian algorithm)
-function easterDate(year){
+function easterDate(year) {
   const a = year % 19;
   const b = Math.floor(year/100);
   const c = year % 100;
@@ -151,12 +141,12 @@ function easterDate(year){
   const day = ((h + l - 7*m + 114) % 31) + 1;
   return new Date(year, month-1, day);
 }
-function addDays(d, n){ const r = new Date(d); r.setDate(r.getDate()+n); return r }
+function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r; }
 
-function germanyBW_Holidays(year){
+function germanyBW_Holidays(year) {
   const hol = [];
   const eas = easterDate(year);
-  function add(d, name){ hol.push({date:toISODate(d), name}) }
+  function add(d, name){ hol.push({date:toISODate(d), name}); }
   add(new Date(year,0,1),'Neujahr');
   add(addDays(eas, -2),'Karfreitag');
   add(addDays(eas, 1),'Ostermontag');
@@ -172,11 +162,6 @@ function germanyBW_Holidays(year){
 }
 
 // render
-const monthList = document.getElementById('monthList');
-const monthsContainer = document.getElementById('monthsContainer');
-const monthTitle = document.getElementById('monthTitle');
-const dayEvents = document.getElementById('dayEvents');
-
 function renderMonths(startDate, monthCount = 6){
   monthsContainer.innerHTML = '';
   loadedMonths.clear();
@@ -186,7 +171,7 @@ function renderMonths(startDate, monthCount = 6){
   for(let y = year; y <= year + 1; y++){
     germanyBW_Holidays(y).forEach(h => { holidays[h.date] = h.name; });
   }
-  
+
   monthTitle.textContent = startDate.toLocaleString('de-DE',{month:'long', year:'numeric'});
 
   for(let offset = 0; offset < monthCount; offset++){
@@ -195,22 +180,22 @@ function renderMonths(startDate, monthCount = 6){
     const curMonth = cur.getMonth();
     const monthKey = `${curYear}-${curMonth}`;
     loadedMonths.add(monthKey);
-    
+
     appendMonthToContainer(cur, holidays, curYear, curMonth);
   }
 }
 
 function appendMonthToContainer(cur, holidays, curYear, curMonth){
   const last = new Date(curYear, curMonth + 1, 0);
-  const monthSection = document.createElement('div'); 
+  const monthSection = document.createElement('div');
   monthSection.className = 'month-section';
   monthSection.setAttribute('data-year', curYear);
   monthSection.setAttribute('data-month', curMonth);
   monthSection.style.marginBottom = '16px';
-  
-  const monthHeader = document.createElement('h3'); 
-  monthHeader.textContent = cur.toLocaleString('de-DE', {month: 'long', year: 'numeric'}); 
-  monthHeader.style.margin = '8px 0'; 
+
+  const monthHeader = document.createElement('h3');
+  monthHeader.textContent = cur.toLocaleString('de-DE', {month: 'long', year: 'numeric'});
+  monthHeader.style.margin = '8px 0';
   monthHeader.style.color = '#0f172a';
   monthSection.appendChild(monthHeader);
 
@@ -250,12 +235,10 @@ function appendMonthToContainer(cur, holidays, curYear, curMonth){
       return ev.date===iso;
     });
 
-    // Single events on left, yearly on right
     dayEventsList.forEach(ev=>{
       if(ev.repeat==='yearly' || ev.birthYear){
         const pill = document.createElement('span');
         pill.className='event-pill';
-        // attach event id for deletion
         pill.setAttribute('data-event-id', ev.id);
         if(ev.birthYear){
           pill.classList.add('birthday');
@@ -264,7 +247,6 @@ function appendMonthToContainer(cur, holidays, curYear, curMonth){
         } else {
           pill.textContent = ev.title;
         }
-        // same context menu handling as single events
         pill.style.cursor = 'pointer';
         pill.addEventListener('contextmenu', e=>{
           e.preventDefault();
@@ -276,10 +258,9 @@ function appendMonthToContainer(cur, holidays, curYear, curMonth){
         });
         right.appendChild(pill);
       } else {
-        // single event - show on left
         const evt = document.createElement('span');
         evt.className='event-pill single-event';
-        evt.style.backgroundColor = '#fed7aa'; // orange statt blau
+        evt.style.backgroundColor = '#fed7aa';
         evt.style.color = '#92400e';
         evt.style.fontWeight = '600';
         evt.style.cursor = 'pointer';
@@ -312,13 +293,12 @@ function openDay(d){
   list.forEach(ev=>{
     const li = document.createElement('li');
     li.setAttribute('data-event-id', ev.id);
-    li.tabIndex = 0; // make focusable
+    li.tabIndex = 0;
     const title = document.createElement('div'); title.textContent = (ev.time? ev.time + ' ':'') + ev.title;
     const desc = document.createElement('div'); desc.textContent = ev.desc||''; desc.style.fontSize='0.85rem'; desc.style.color='#556';
     if(ev.birthYear){ const age = d.getFullYear()-Number(ev.birthYear); const ageEl = document.createElement('div'); ageEl.textContent = 'Alter: '+age; ageEl.style.color='#0a8'; ageEl.style.fontSize='0.85rem'; li.appendChild(ageEl); }
     li.appendChild(title); li.appendChild(desc);
-    
-    // Rechtsklick-Menü
+
     li.addEventListener('contextmenu', e=>{
       e.preventDefault();
       li.focus();
@@ -328,44 +308,32 @@ function openDay(d){
       menu.classList.remove('hidden');
       menu.currentEventId = ev.id;
     });
-    
-    // Click - focus
+
     li.addEventListener('click', ()=>{
       dayEvents.querySelectorAll('li').forEach(l => l.style.backgroundColor = '');
       li.focus();
       li.style.backgroundColor = '#dbeafe';
     });
-    
+
     dayEvents.appendChild(li);
   });
 }
 
 function deleteEvent(eventId){
   deleteEventFirebase(eventId);
-  // Refresh with current viewDate
   renderMonths(viewDate);
-  // Open the day that was previously shown (get from first event)
   const firstLi = dayEvents.querySelector('li');
   if(firstLi){
     const evId = firstLi.getAttribute('data-event-id');
     const ev = events.find(e => e.id === evId);
-    if(ev){
-      const d = new Date(ev.date);
-      openDay(d);
-    }
+    if(ev){ openDay(new Date(ev.date)); }
   } else {
     openDay(new Date());
   }
 }
 
-// modal
-const modal = document.getElementById('eventModal');
-const form = document.getElementById('eventForm');
-const addBtn = document.getElementById('addEvent');
-const cancelBtn = document.getElementById('cancel');
-
 function openEventForm(d){
-  modal.classList.remove('hidden'); 
+  modal.classList.remove('hidden');
   form.reset();
   form.date.value = toISODate(d);
   form.time.focus();
@@ -391,7 +359,7 @@ form.addEventListener('submit', async (e) => {
   modal.classList.add('hidden');
 });
 
-// import/export
+// export
 document.getElementById('exportBtn').addEventListener('click', () => {
   const json = JSON.stringify(events, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
@@ -428,36 +396,29 @@ document.getElementById('importFile').addEventListener('change', async (e) => {
   reader.readAsText(file);
 });
 
-// nav
+// navigation
 document.getElementById('prev').addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()-1); renderMonths(viewDate); });
 document.getElementById('next').addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()+1); renderMonths(viewDate); });
 document.getElementById('today').addEventListener('click', ()=>{ viewDate = new Date(); renderMonths(viewDate); });
 
 // Jump to date
 document.getElementById('jumpToDate').addEventListener('change', e=>{
-  const dateStr = e.target.value; // format: YYYY-MM-DD
+  const dateStr = e.target.value;
   if(!dateStr) return;
   const [year, month, day] = dateStr.split('-').map(Number);
   const targetDate = new Date(year, month - 1, day);
-  
-  // Ensure months are loaded
   const targetMonth = new Date(year, month - 1, 1);
   renderMonths(targetMonth);
-  
-  // Scroll to target day and highlight
   setTimeout(()=>{
     const sections = monthsContainer.querySelectorAll('.month-section');
-    let foundDay = null;
     for(const section of sections){
       const secYear = Number(section.getAttribute('data-year'));
       const secMonth = Number(section.getAttribute('data-month'));
       if(secYear === year && secMonth === month - 1){
-        // find the specific day row
         const dayRows = section.querySelectorAll('.day-row');
         for(const row of dayRows){
           const dayText = row.querySelector('.day-date div:last-child');
           if(dayText && parseInt(dayText.textContent) === day){
-            foundDay = row;
             row.style.backgroundColor = '#fff3cd';
             row.scrollIntoView({behavior: 'smooth', block: 'center'});
             setTimeout(()=> row.style.backgroundColor = '', 2000);
@@ -471,12 +432,11 @@ document.getElementById('jumpToDate').addEventListener('change', e=>{
   }, 50);
 });
 
-// Scroll events - update title and infinite load
+// scroll handling
 monthList.addEventListener('scroll', ()=>{
-  // find first visible month section
   const sections = monthsContainer.querySelectorAll('.month-section');
   if(sections.length === 0) return;
-  
+
   let firstVisibleMonth = null;
   for(const section of sections){
     const rect = section.getBoundingClientRect();
@@ -485,27 +445,25 @@ monthList.addEventListener('scroll', ()=>{
       break;
     }
   }
-  
+
   if(firstVisibleMonth){
     const year = Number(firstVisibleMonth.getAttribute('data-year'));
     const month = Number(firstVisibleMonth.getAttribute('data-month'));
     monthTitle.textContent = new Date(year, month, 1).toLocaleString('de-DE', {month:'long', year:'numeric'});
   }
-  
-  // infinite scroll - load more if near bottom
+
   if(monthList.scrollHeight - monthList.scrollTop - monthList.clientHeight < 300){
     const lastSection = sections[sections.length - 1];
     if(lastSection){
       const lastYear = Number(lastSection.getAttribute('data-year'));
       const lastMonth = Number(lastSection.getAttribute('data-month'));
       const nextDate = new Date(lastYear, lastMonth + 1, 1);
-      
-      // load 3 more months
+
       const holidays = {};
       for(let y = nextDate.getFullYear(); y <= nextDate.getFullYear() + 1; y++){
         germanyBW_Holidays(y).forEach(h => { holidays[h.date] = h.name; });
       }
-      
+
       for(let i = 0; i < 3; i++){
         const checkDate = new Date(nextDate.getFullYear(), nextDate.getMonth() + i, 1);
         const monthKey = `${checkDate.getFullYear()}-${checkDate.getMonth()}`;
@@ -518,7 +476,7 @@ monthList.addEventListener('scroll', ()=>{
   }
 });
 
-// Kontextmenü schließen bei Klick außerhalb
+// Kontextmenü schließen
 document.addEventListener('click', e=>{
   const menu = document.getElementById('contextMenu');
   if(!menu.contains(e.target)){
