@@ -43,6 +43,7 @@ async function initFirebase() {
     userId = result.user.uid;
     console.log('Angemeldet als:', userId);
 
+    // Listener auf users/{userId}/events für persönliche Termine
     const eventsRef = collection(db, 'users', userId, 'events');
     const q = query(eventsRef);
 
@@ -76,8 +77,15 @@ async function saveEvent(eventData) {
   }
   try {
     const eventsRef = collection(db, 'users', userId, 'events');
-    await addDoc(eventsRef, eventData);
-    updateSyncStatus('↻ Speichern...', 'blue');
+    const docRef = await addDoc(eventsRef, eventData);
+    // Optional: ID zum lokalen Event hinzufügen, falls noch nicht vorhanden
+    const localIndex = events.findIndex(e => e.createdAt === eventData.createdAt);
+    if (localIndex !== -1) {
+      events[localIndex].id = docRef.id;
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+    updateSyncStatus('✓ Gespeichert', 'green');
+    renderMonths(viewDate);
   } catch (error) {
     console.error('Fehler beim Speichern:', error);
     updateSyncStatus('⚠ Lokal gespeichert', 'orange');
