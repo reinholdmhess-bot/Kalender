@@ -1,5 +1,6 @@
 /* Kalender App mit Firebase Cloud Sync
- - Termine synchronisieren zwischen Geräten
+ - Termine in öffentlicher Cloud-Datenbank (publicEvents)
+ - Synchronisation zwischen allen Geräten
  - Firebase Firestore für Cloud-Speicherung
  - localStorage Fallback (Offline-Modus)
  - Anonyme Authentifizierung
@@ -21,7 +22,6 @@ localStorage.removeItem(STORAGE_KEY);
 let events = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
 let viewDate = new Date();
 let loadedMonths = new Set();
-let userId = null;
 let unsubscribe = null;
 let isOnline = true;
 
@@ -39,18 +39,18 @@ const syncStatus = document.getElementById('syncStatus');
 // Authentifizierung & Firebase-Listener
 async function initFirebase() {
   try {
-    const result = await signInAnonymously(auth);
-    userId = result.user.uid;
-    console.log('Angemeldet als:', userId);
+    await signInAnonymously(auth);
+    console.log('Firebase: Anonym angemeldet');
 
-    // Listener auf users/{userId}/events für persönliche Termine
-    const eventsRef = collection(db, 'users', userId, 'events');
+    // Listener auf publicEvents für gemeinsame Termine
+    const eventsRef = collection(db, 'publicEvents');
     const q = query(eventsRef);
 
     unsubscribe = onSnapshot(q, (snapshot) => {
       events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
       renderMonths(viewDate);
+      isOnline = true;
       updateSyncStatus('✓ Synchronisiert', 'green');
     }, (error) => {
       console.warn('Firebase Fehler:', error);
@@ -70,14 +70,14 @@ async function initFirebase() {
 
 // Event speichern (Cloud + Local)
 async function saveEvent(eventData) {
-  if (!isOnline || !userId) {
+  if (!isOnline) {
     // Offline-Modus: Event ist bereits lokal hinzugefügt
     localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
     renderMonths(viewDate);
     return;
   }
   try {
-    const eventsRef = collection(db, 'users', userId, 'events');
+    const eventsRef = collection(db, 'publicEvents');
     await addDoc(eventsRef, eventData);
     // Der Snapshot-Listener aktualisiert automatisch das events Array
     updateSyncStatus('✓ Gespeichert', 'green');
@@ -94,12 +94,12 @@ async function saveEvent(eventData) {
 async function deleteEventFirebase(eventId) {
   events = events.filter(e => e.id !== eventId);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
-  if (!isOnline || !userId) {
+  if (!isOnline) {
     renderMonths(viewDate);
     return;
   }
   try {
-    const eventRef = doc(db, 'users', userId, 'events', eventId);
+    const eventRef = doc(db, 'publicEvents', eventId);
     await deleteDoc(eventRef);
     updateSyncStatus('↻ Löschen...', 'blue');
   } catch (error) {
@@ -391,6 +391,8 @@ document.getElementById('importFile').addEventListener('change', async (e) => {
       const imported = JSON.parse(ev.target.result);
       if (Array.isArray(imported)) {
         for (const item of imported) {
+          // Temporäre ID für sofortige Anzeige
+          item.id = 'local-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
           events.push(item);
           await saveEvent(item);
         }
@@ -507,11 +509,9 @@ document.getElementById('deleteMenuOption').addEventListener('click', ()=>{
 document.addEventListener('keydown', e=>{
   if(e.key === 'Delete'){
     const focused = document.activeElement;
-    if(focused && focused.getAttribute && focused.getAttribute('data-event-id')){
-      const eventId = Number(focused.getAttribute('data-event-id'));
-      if(eventId && confirm('Termin wirklich löschen?')){
-        deleteEvent(eventId);
-      }
+    const eventId = focused?.getAttribute?.('data-event-id');
+    if(eventId && confirm('Termin wirklich löschen?')){
+      deleteEvent(eventId);
     }
   }
 });
