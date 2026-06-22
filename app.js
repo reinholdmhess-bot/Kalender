@@ -70,26 +70,23 @@ async function initFirebase() {
 
 // Event speichern (Cloud + Local)
 async function saveEvent(eventData) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
   if (!isOnline || !userId) {
+    // Offline-Modus: Event ist bereits lokal hinzugefügt
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
     renderMonths(viewDate);
     return;
   }
   try {
     const eventsRef = collection(db, 'users', userId, 'events');
-    const docRef = await addDoc(eventsRef, eventData);
-    // Optional: ID zum lokalen Event hinzufügen, falls noch nicht vorhanden
-    const localIndex = events.findIndex(e => e.createdAt === eventData.createdAt);
-    if (localIndex !== -1) {
-      events[localIndex].id = docRef.id;
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+    await addDoc(eventsRef, eventData);
+    // Der Snapshot-Listener aktualisiert automatisch das events Array
     updateSyncStatus('✓ Gespeichert', 'green');
-    renderMonths(viewDate);
   } catch (error) {
     console.error('Fehler beim Speichern:', error);
     updateSyncStatus('⚠ Lokal gespeichert', 'orange');
     isOnline = false;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+    renderMonths(viewDate);
   }
 }
 
@@ -353,7 +350,10 @@ cancelBtn.addEventListener('click', ()=> modal.classList.add('hidden'));
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(form);
+  // Temporäre ID für sofortige Anzeige
+  const tempId = 'local-' + Date.now();
   const ev = {
+    id: tempId,
     title: fd.get('title'),
     date: fd.get('date'),
     time: fd.get('time') || '',
@@ -364,6 +364,7 @@ form.addEventListener('submit', async (e) => {
   };
   events.push(ev);
   await saveEvent(ev);
+  renderMonths(viewDate); // Sofort rendern für bessere UX
   modal.classList.add('hidden');
 });
 
