@@ -1,0 +1,9 @@
+# Firebase config (öffentliche API Keys, aber lieber nicht versionieren)
+firebase-config.js
+
+# Firebase cache
+.firebase/
+
+# IDE/Editor
+.vscode/
+.idea/

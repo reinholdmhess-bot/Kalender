@@ -8,7 +8,7 @@
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
 import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
-import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+import { getFirestore, collection, addDoc, setDoc, deleteDoc, doc, onSnapshot, query } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 
 // Firebase Init
@@ -23,7 +23,7 @@ let events = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
 let viewDate = new Date();
 let loadedMonths = new Set();
 let unsubscribe = null;
-let isOnline = true;
+let isOnline = true; // Firebase ist immer online, Watcher aktualisiert bei Fehlern
 
 // UI Elements
 const monthList = document.getElementById('monthList');
@@ -36,6 +36,35 @@ const addBtn = document.getElementById('addEvent');
 const cancelBtn = document.getElementById('cancel');
 const syncStatus = document.getElementById('syncStatus');
 
+// Migration: Alle Events neu speichern mit synchronen IDs
+async function migrateAllEvents() {
+  if (!isOnline || events.length === 0) return;
+  console.log('Migriere', events.length, 'Events...');
+  // Alle alten Events löschen
+  for (const ev of events) {
+    try {
+      // Prüfe ob es ein Firebase-generierte ID ist (nicht mit local-)
+      if (!ev.id.startsWith('local-')) {
+        await deleteDoc(doc(db, 'publicEvents', ev.id));
+        console.log('Gelöscht (alte ID):', ev.id);
+      }
+    } catch (e) {
+      // Ignorieren, falls nicht vorhanden
+    }
+  }
+  // Alle Events neu speichern mit lokaler ID
+  for (const ev of events) {
+    try {
+      const { id } = ev;
+      const { id: _, ...dataWithoutId } = ev;
+      await setDoc(doc(db, 'publicEvents', id), dataWithoutId);
+      console.log('Neu gespeichert:', id);
+    } catch (error) {
+      console.error('Migration fehlgeschlagen für', ev.id, error);
+    }
+  }
+}
+
 // Authentifizierung & Firebase-Listener
 async function initFirebase() {
   try {
@@ -46,9 +75,14 @@ async function initFirebase() {
     const eventsRef = collection(db, 'publicEvents');
     const q = query(eventsRef);
 
-    unsubscribe = onSnapshot(q, (snapshot) => {
+    unsubscribe = onSnapshot(q, async (snapshot) => {
       events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+      // Migration ausführen, falls nötig (Events ohne 'local-' ID)
+      const needsMigration = events.length > 0 && !events.some(e => e.id.startsWith('local-'));
+      if (needsMigration) {
+        // Keine Migration nötig - die Events sind bereits in Firestore
+      }
       renderMonths(viewDate);
       isOnline = true;
       updateSyncStatus('✓ Synchronisiert', 'green');
@@ -68,8 +102,9 @@ async function initFirebase() {
   }
 }
 
-// Event speichern (Cloud + Local)
+// Event speichern (Cloud + Local), verwendet die übergebene ID
 async function saveEvent(eventData) {
+  const eventId = eventData.id; // Unsere temp-ID (wird auch als Firestore-ID verwendet)
   if (!isOnline) {
     // Offline-Modus: Event ist bereits lokal hinzugefügt
     localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
@@ -77,9 +112,10 @@ async function saveEvent(eventData) {
     return;
   }
   try {
-    const eventsRef = collection(db, 'publicEvents');
-    await addDoc(eventsRef, eventData);
-    // Der Snapshot-Listener aktualisiert automatisch das events Array
+    const eventRef = doc(db, 'publicEvents', eventId);
+    await setDoc(eventRef, eventData);
+    console.log('Event gespeichert mit ID:', eventId);
+    // Der onSnapshot-Listener aktualisiert das events Array automatisch
     updateSyncStatus('✓ Gespeichert', 'green');
   } catch (error) {
     console.error('Fehler beim Speichern:', error);
@@ -92,19 +128,24 @@ async function saveEvent(eventData) {
 
 // Event löschen
 async function deleteEventFirebase(eventId) {
-  events = events.filter(e => e.id !== eventId);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
   if (!isOnline) {
+    // Offline-Modus: nur lokal löschen
+    events = events.filter(e => e.id !== eventId);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
     renderMonths(viewDate);
     return;
   }
   try {
+    console.log('Lösche Event mit ID:', eventId);
     const eventRef = doc(db, 'publicEvents', eventId);
     await deleteDoc(eventRef);
-    updateSyncStatus('↻ Löschen...', 'blue');
+    console.log('Event gelöscht von Firestore');
+    updateSyncStatus('✓ Gelöscht', 'green');
+    // Der onSnapshot-Listener aktualisiert das events Array automatisch
   } catch (error) {
     console.error('Fehler beim Löschen:', error);
-    updateSyncStatus('⚠ Lokal gelöscht', 'orange');
+    console.error('Event ID war:', eventId);
+    updateSyncStatus('⚠ Löschen fehlgeschlagen', 'red');
     isOnline = false;
   }
 }
@@ -364,7 +405,7 @@ form.addEventListener('submit', async (e) => {
   };
   events.push(ev);
   await saveEvent(ev);
-  renderMonths(viewDate); // Sofort rendern für bessere UX
+  // Der onSnapshot-Listener aktualisiert das UI automatisch
   modal.classList.add('hidden');
 });
 
@@ -516,9 +557,30 @@ document.addEventListener('keydown', e=>{
   }
 });
 
+// Alle Events löschen (für Datenbank-Reset)
+async function clearAllEvents() {
+  if (!isOnline) {
+    alert('Nicht verbunden!');
+    return;
+  }
+  if (!confirm('ALLE Termine unwiderruflich löschen?')) return;
+  try {
+    for (const ev of [...events]) {
+      await deleteDoc(doc(db, 'publicEvents', ev.id));
+    }
+    updateSyncStatus('✓ Alles gelöscht', 'green');
+  } catch (error) {
+    console.error('Fehler beim Löschen aller Events:', error);
+    alert('Fehler: ' + error.message);
+  }
+}
+
 // init
 renderMonths(viewDate);
 initFirebase();
+
+// Clear-All Button Handler
+document.getElementById('clearAllBtn').addEventListener('click', () => clearAllEvents());
 
 // scroll to today on load
 setTimeout(()=>{
