@@ -36,53 +36,23 @@ const addBtn = document.getElementById('addEvent');
 const cancelBtn = document.getElementById('cancel');
 const syncStatus = document.getElementById('syncStatus');
 
-// Migration: Alle Events neu speichern mit synchronen IDs
-async function migrateAllEvents() {
-  if (!isOnline || events.length === 0) return;
-  console.log('Migriere', events.length, 'Events...');
-  // Alle alten Events löschen
-  for (const ev of events) {
-    try {
-      // Prüfe ob es ein Firebase-generierte ID ist (nicht mit local-)
-      if (!ev.id.startsWith('local-')) {
-        await deleteDoc(doc(db, 'publicEvents', ev.id));
-        console.log('Gelöscht (alte ID):', ev.id);
-      }
-    } catch (e) {
-      // Ignorieren, falls nicht vorhanden
-    }
-  }
-  // Alle Events neu speichern mit lokaler ID
-  for (const ev of events) {
-    try {
-      const { id } = ev;
-      const { id: _, ...dataWithoutId } = ev;
-      await setDoc(doc(db, 'publicEvents', id), dataWithoutId);
-      console.log('Neu gespeichert:', id);
-    } catch (error) {
-      console.error('Migration fehlgeschlagen für', ev.id, error);
-    }
-  }
-}
 
 // Authentifizierung & Firebase-Listener
 async function initFirebase() {
   try {
     await signInAnonymously(auth);
-    console.log('Firebase: Anonym angemeldet');
 
     // Listener auf publicEvents für gemeinsame Termine
     const eventsRef = collection(db, 'publicEvents');
     const q = query(eventsRef);
 
     unsubscribe = onSnapshot(q, async (snapshot) => {
-      events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      events = snapshot.docs.map(doc => {
+        const data = doc.data();
+        const id = data.localId || doc.id;
+        return { id, ...data };
+      });
       localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
-      // Migration ausführen, falls nötig (Events ohne 'local-' ID)
-      const needsMigration = events.length > 0 && !events.some(e => e.id.startsWith('local-'));
-      if (needsMigration) {
-        // Keine Migration nötig - die Events sind bereits in Firestore
-      }
       renderMonths(viewDate);
       isOnline = true;
       updateSyncStatus('✓ Synchronisiert', 'green');
@@ -113,8 +83,8 @@ async function saveEvent(eventData) {
   }
   try {
     const eventRef = doc(db, 'publicEvents', eventId);
-    await setDoc(eventRef, eventData);
-    console.log('Event gespeichert mit ID:', eventId);
+    const { id: _, ...rest } = eventData;
+    await setDoc(eventRef, { ...rest, localId: eventId });
     // Der onSnapshot-Listener aktualisiert das events Array automatisch
     updateSyncStatus('✓ Gespeichert', 'green');
   } catch (error) {
@@ -126,25 +96,23 @@ async function saveEvent(eventData) {
   }
 }
 
-// Event löschen
-async function deleteEventFirebase(eventId) {
+// Event löschen - verwendet die localId (gespeichert in Firestore-Daten)
+async function deleteEventFirebase(localId) {
   if (!isOnline) {
     // Offline-Modus: nur lokal löschen
-    events = events.filter(e => e.id !== eventId);
+    events = events.filter(e => e.id !== localId);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
     renderMonths(viewDate);
     return;
   }
+
+  // Die Firestore-ID ist die localId (wir speichern sie in den Daten)
   try {
-    console.log('Lösche Event mit ID:', eventId);
-    const eventRef = doc(db, 'publicEvents', eventId);
+    const eventRef = doc(db, 'publicEvents', localId);
     await deleteDoc(eventRef);
-    console.log('Event gelöscht von Firestore');
-    updateSyncStatus('✓ Gelöscht', 'green');
-    // Der onSnapshot-Listener aktualisiert das events Array automatisch
+    updateSyncStatus('↻ Lösche...', 'blue');
   } catch (error) {
     console.error('Fehler beim Löschen:', error);
-    console.error('Event ID war:', eventId);
     updateSyncStatus('⚠ Löschen fehlgeschlagen', 'red');
     isOnline = false;
   }
@@ -256,14 +224,52 @@ function appendMonthToContainer(cur, holidays, curYear, curMonth){
 
     const dayRow = document.createElement('div');
     dayRow.className = 'day-row' + (isWeekend ? ' weekend' : '') + (isToday ? ' today' : '');
-    dayRow.addEventListener('dblclick', ()=> openEventForm(curDay));
-    dayRow.addEventListener('click', ()=> openDay(curDay));
+
+    // Einzelner Tap öffnet den Tag
+    dayRow.addEventListener('click', () => openDay(curDay));
+
+    // '+' Button für neuen Termin
+    const addBtn = document.createElement('span');
+    addBtn.className = 'add-day-btn';
+    addBtn.style.cssText = 'margin-left:auto; margin-right:4px; cursor:pointer; font-size:12px; color:#0891b2;';
+    addBtn.textContent = '+';
+    addBtn.title = 'Neuen Termin für diesen Tag';
+    addBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openEventForm(curDay);
+    });
+    dayRow.appendChild(addBtn);
 
     const kwCell = document.createElement('div'); kwCell.className='kw-cell'; kwCell.textContent = 'KW '+kw;
     const dateEl = document.createElement('div'); dateEl.className='day-date';
     const dow_txt = document.createElement('div'); dow_txt.className='day-date-day'; dow_txt.textContent = curDay.toLocaleString('de-DE',{weekday:'short'});
     const day_txt = document.createElement('div'); day_txt.textContent = d;
     dateEl.appendChild(dow_txt); dateEl.appendChild(day_txt);
+
+    // Long-tap für Termin-Eingabe (nur auf der Datumsziffer, nicht auf ganzer Zeile)
+    // Verhindert Chrome's context menu (herunterladen/teilen/drucken)
+    let touchTimer = null;
+    day_txt.style.cursor = 'pointer';
+    day_txt.style.userSelect = 'none';
+    day_txt.addEventListener('touchstart', (e) => {
+      // Nicht preventDefault() - sonst wird Zoom blockiert
+      touchTimer = setTimeout(() => {
+        openEventForm(curDay);
+      }, 500);
+    });
+    day_txt.addEventListener('touchend', (e) => {
+      e.preventDefault(); // Verhindert Chrome's context menu bei kurzem Tap
+      if (touchTimer) {
+        clearTimeout(touchTimer);
+        touchTimer = null;
+      }
+    });
+    day_txt.addEventListener('touchmove', (e) => {
+      if (touchTimer) {
+        clearTimeout(touchTimer);
+        touchTimer = null;
+      }
+    });
 
     const content = document.createElement('div'); content.className='day-content';
     const left = document.createElement('div'); left.textContent='';
@@ -294,6 +300,11 @@ function appendMonthToContainer(cur, holidays, curYear, curMonth){
           pill.textContent = ev.title;
         }
         pill.style.cursor = 'pointer';
+
+        // Touch-Handler für mobile Geräte (verhindert Chrome Context-Menü)
+        pill.addEventListener('touchstart', (e) => {
+          e.preventDefault();
+        });
         pill.addEventListener('contextmenu', e=>{
           e.preventDefault();
           const menu = document.getElementById('contextMenu');
@@ -312,6 +323,11 @@ function appendMonthToContainer(cur, holidays, curYear, curMonth){
         evt.style.cursor = 'pointer';
         evt.textContent = (ev.time? ev.time + ' ':'') + ev.title;
         evt.setAttribute('data-event-id', ev.id);
+
+        // Touch-Handler für mobile Geräte (verhindert Chrome Context-Menü)
+        evt.addEventListener('touchstart', (e) => {
+          e.preventDefault();
+        });
         evt.addEventListener('contextmenu', e=>{
           e.preventDefault();
           const menu = document.getElementById('contextMenu');
@@ -345,6 +361,31 @@ function openDay(d){
     if(ev.birthYear){ const age = d.getFullYear()-Number(ev.birthYear); const ageEl = document.createElement('div'); ageEl.textContent = 'Alter: '+age; ageEl.style.color='#0a8'; ageEl.style.fontSize='0.85rem'; li.appendChild(ageEl); }
     li.appendChild(title); li.appendChild(desc);
 
+    // Long-tap für Kontextmenü (mobile Geräte) + contextmenu für Desktop
+    let liTouchTimer = null;
+    li.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      liTouchTimer = setTimeout(() => {
+        const touch = e.touches[0];
+        const menu = document.getElementById('contextMenu');
+        menu.style.left = touch.clientX + 'px';
+        menu.style.top = touch.clientY + 'px';
+        menu.classList.remove('hidden');
+        menu.currentEventId = ev.id;
+      }, 500);
+    });
+    li.addEventListener('touchend', (e) => {
+      if (liTouchTimer) {
+        clearTimeout(liTouchTimer);
+        liTouchTimer = null;
+      }
+    });
+    li.addEventListener('touchmove', (e) => {
+      if (liTouchTimer) {
+        clearTimeout(liTouchTimer);
+        liTouchTimer = null;
+      }
+    });
     li.addEventListener('contextmenu', e=>{
       e.preventDefault();
       li.focus();
@@ -380,6 +421,8 @@ function deleteEvent(eventId){
 
 function openEventForm(d){
   modal.classList.remove('hidden');
+  document.getElementById('modalTitle').textContent = 'Neuer Termin';
+  delete form.dataset.editId;
   form.reset();
   form.date.value = toISODate(d);
   form.time.focus();
@@ -391,21 +434,42 @@ cancelBtn.addEventListener('click', ()=> modal.classList.add('hidden'));
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(form);
-  // Temporäre ID für sofortige Anzeige
-  const tempId = 'local-' + Date.now();
-  const ev = {
-    id: tempId,
-    title: fd.get('title'),
-    date: fd.get('date'),
-    time: fd.get('time') || '',
-    repeat: fd.get('repeat'),
-    desc: fd.get('desc') || '',
-    birthYear: fd.get('birthYear') || '',
-    createdAt: new Date().toISOString()
-  };
-  events.push(ev);
-  await saveEvent(ev);
-  // Der onSnapshot-Listener aktualisiert das UI automatisch
+  const editId = form.dataset.editId;
+
+  if(editId){
+    // Bearbeiten: vorhandenes Event aktualisieren
+    const ev = {
+      id: editId,
+      title: fd.get('title'),
+      date: fd.get('date'),
+      time: fd.get('time') || '',
+      repeat: fd.get('repeat'),
+      desc: fd.get('desc') || '',
+      birthYear: fd.get('birthYear') || ''
+    };
+    // Lokales Update
+    const idx = events.findIndex(e => e.id === editId);
+    if(idx >= 0){
+      events[idx] = ev;
+    }
+    await saveEvent(ev);
+    delete form.dataset.editId;
+  } else {
+    // Neuer Termin
+    const tempId = 'local-' + Date.now();
+    const ev = {
+      id: tempId,
+      title: fd.get('title'),
+      date: fd.get('date'),
+      time: fd.get('time') || '',
+      repeat: fd.get('repeat'),
+      desc: fd.get('desc') || '',
+      birthYear: fd.get('birthYear') || '',
+      createdAt: new Date().toISOString()
+    };
+    events.push(ev);
+    await saveEvent(ev);
+  }
   modal.classList.add('hidden');
 });
 
@@ -453,7 +517,22 @@ document.getElementById('prev').addEventListener('click', ()=>{ viewDate.setMont
 document.getElementById('next').addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()+1); renderMonths(viewDate); });
 document.getElementById('today').addEventListener('click', ()=>{ viewDate = new Date(); renderMonths(viewDate); });
 
-// Jump to date
+// Mobile Date-Trigger - für Touch-Geräte ohne Chrome Context-Menü
+const mobileDateTrigger = document.getElementById('mobileDateTrigger');
+const jumpToDateInput = document.getElementById('jumpToDate');
+if (mobileDateTrigger) {
+  mobileDateTrigger.addEventListener('click', () => {
+    jumpToDateInput.showPicker(); // Öffnet den Date-Picker ohne fokussieren
+  });
+}
+// Schütze vor touch-Interaktionen (verhindert Chrome Context-Menü und Zoom-Fokussierung)
+jumpToDateInput.addEventListener('touchstart', (e) => {
+  e.stopPropagation();
+});
+jumpToDateInput.addEventListener('touchend', (e) => {
+  e.preventDefault(); // Verhindert Chrome's context menu
+});
+
 document.getElementById('jumpToDate').addEventListener('change', e=>{
   const dateStr = e.target.value;
   if(!dateStr) return;
@@ -536,12 +615,38 @@ document.addEventListener('click', e=>{
   }
 });
 
+// Bearbeiten via Kontext-Menü
+function editEvent(eventId){
+  const ev = events.find(e => e.id === eventId);
+  if(!ev) return;
+  modal.classList.remove('hidden');
+  document.getElementById('modalTitle').textContent = 'Termin bearbeiten';
+  form.title.value = ev.title || '';
+  form.date.value = ev.date || '';
+  form.time.value = ev.time || '';
+  form.repeat.value = ev.repeat || 'none';
+  form.birthYear.value = ev.birthYear || '';
+  form.desc.value = ev.desc || '';
+  // Speicher-ID für Update
+  form.dataset.editId = eventId;
+}
+
 // Löschen via Kontext-Menü
 document.getElementById('deleteMenuOption').addEventListener('click', ()=>{
   const menu = document.getElementById('contextMenu');
   const eventId = menu.currentEventId;
   if(eventId && confirm('Termin wirklich löschen?')){
     deleteEvent(eventId);
+  }
+  menu.classList.add('hidden');
+});
+
+// Bearbeiten-Handler
+document.getElementById('editMenuOption').addEventListener('click', ()=>{
+  const menu = document.getElementById('contextMenu');
+  const eventId = menu.currentEventId;
+  if(eventId){
+    editEvent(eventId);
   }
   menu.classList.add('hidden');
 });
@@ -557,30 +662,10 @@ document.addEventListener('keydown', e=>{
   }
 });
 
-// Alle Events löschen (für Datenbank-Reset)
-async function clearAllEvents() {
-  if (!isOnline) {
-    alert('Nicht verbunden!');
-    return;
-  }
-  if (!confirm('ALLE Termine unwiderruflich löschen?')) return;
-  try {
-    for (const ev of [...events]) {
-      await deleteDoc(doc(db, 'publicEvents', ev.id));
-    }
-    updateSyncStatus('✓ Alles gelöscht', 'green');
-  } catch (error) {
-    console.error('Fehler beim Löschen aller Events:', error);
-    alert('Fehler: ' + error.message);
-  }
-}
 
 // init
 renderMonths(viewDate);
 initFirebase();
-
-// Clear-All Button Handler
-document.getElementById('clearAllBtn').addEventListener('click', () => clearAllEvents());
 
 // scroll to today on load
 setTimeout(()=>{
