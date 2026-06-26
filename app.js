@@ -616,15 +616,22 @@ document.getElementById('jumpToDate').addEventListener('change', e=>{
 // Hilfsfunktion: Zu heute scrollen
 function scrollToToday(){
   const today = new Date();
+  console.log('scrollToToday: looking for', today.getFullYear(), today.getMonth(), today.getDate());
   const sections = monthsContainer.querySelectorAll('.month-section');
+  console.log('scrollToToday: found', sections.length, 'sections');
   for(const section of sections){
     const secYear = Number(section.getAttribute('data-year'));
     const secMonth = Number(section.getAttribute('data-month'));
+    console.log('scrollToToday: checking section', secYear, secMonth);
     if(secYear === today.getFullYear() && secMonth === today.getMonth()){
       const dayRows = section.querySelectorAll('.day-row');
+      console.log('scrollToToday: found', dayRows.length, 'day rows in today month');
       for(const row of dayRows){
         const dayText = row.querySelector('.day-date div:last-child');
-        if(dayText && parseInt(dayText.textContent) === today.getDate()){
+        const dayNum = dayText ? parseInt(dayText.textContent) : null;
+        console.log('scrollToToday: checking day', dayNum);
+        if(dayText && dayNum === today.getDate()){
+          console.log('scrollToToday: scrolling to today row');
           row.scrollIntoView({behavior: 'smooth', block: 'center'});
           break;
         }
