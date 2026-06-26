@@ -560,8 +560,11 @@ document.getElementById('next').addEventListener('click', ()=>{ viewDate.setMont
 document.getElementById('today').addEventListener('click', ()=>{
   viewDate = new Date();
   renderMonths(viewDate);
-  // Zu heute scrollen (exakt wie beim Init, aber mit Panel-Öffnung)
-  setTimeout(scrollToToday, 50);
+  // Zuerst scrollen, dann Panel öffnen
+  setTimeout(()=>{
+    scrollToToday();
+    setTimeout(() => openDay(new Date()), 300);
+  }, 50);
 });
 
 // Mobile Date-Trigger - für Touch-Geräte ohne Chrome Context-Menü
@@ -610,7 +613,7 @@ document.getElementById('jumpToDate').addEventListener('change', e=>{
   }, 50);
 });
 
-// Hilfsfunktion: Zu heute scrollen (wird auch beim Laden und Button-Klick verwendet)
+// Hilfsfunktion: Zu heute scrollen
 function scrollToToday(){
   const today = new Date();
   const sections = monthsContainer.querySelectorAll('.month-section');
@@ -629,8 +632,6 @@ function scrollToToday(){
       break;
     }
   }
-  // Day-Panel auch für heute öffnen
-  openDay(today);
 }
 
 // scroll handling
