@@ -558,6 +558,7 @@ document.getElementById('importFile').addEventListener('change', async (e) => {
 document.getElementById('prev').addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()-1); renderMonths(viewDate); });
 document.getElementById('next').addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()+1); renderMonths(viewDate); });
 document.getElementById('today').addEventListener('click', () => {
+  alert('Heute-Button geklickt!');
   console.log('Today button clicked!');
   viewDate = new Date();
   console.log('viewDate set to:', viewDate);
