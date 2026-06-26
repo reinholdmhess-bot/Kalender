@@ -6,10 +6,14 @@
  - Anonyme Authentifizierung
 */
 
+console.log('App script starting...');
+
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
 import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
 import { getFirestore, collection, addDoc, setDoc, deleteDoc, doc, onSnapshot, query } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
+
+console.log('Firebase imports loaded');
 
 // Firebase Init
 const app = initializeApp(firebaseConfig);
@@ -563,23 +567,25 @@ console.log('Buttons found:', {prevBtn, nextBtn, todayBtn});
 
 if (prevBtn) prevBtn.addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()-1); renderMonths(viewDate); });
 if (nextBtn) nextBtn.addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()+1); renderMonths(viewDate); });
-if (todayBtn) todayBtn.addEventListener('click', () => {
-  alert('Heute-Button geklickt!');
-  console.log('Today button clicked!');
-  viewDate = new Date();
-  console.log('viewDate set to:', viewDate);
-  renderMonths(viewDate);
-  console.log('renderMonths called');
-  // Zuerst scrollen, dann Panel öffnen
-  setTimeout(()=>{
-    console.log('Setting up scroll timeout, calling scrollToToday');
-    scrollToToday();
-    setTimeout(() => {
-      console.log('Opening day panel');
-      openDay(new Date());
-    }, 300);
-  }, 50);
-}) else {
+if (todayBtn) {
+  todayBtn.addEventListener('click', () => {
+    alert('Heute-Button geklickt!');
+    console.log('Today button clicked!');
+    viewDate = new Date();
+    console.log('viewDate set to:', viewDate);
+    renderMonths(viewDate);
+    console.log('renderMonths called');
+    // Zuerst scrollen, dann Panel öffnen
+    setTimeout(()=>{
+      console.log('Setting up scroll timeout, calling scrollToToday');
+      scrollToToday();
+      setTimeout(() => {
+        console.log('Opening day panel');
+        openDay(new Date());
+      }, 300);
+    }, 50);
+  });
+} else {
   console.error('Today button not found in DOM!');
 }
 
