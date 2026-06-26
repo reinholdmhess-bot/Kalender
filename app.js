@@ -560,28 +560,8 @@ document.getElementById('next').addEventListener('click', ()=>{ viewDate.setMont
 document.getElementById('today').addEventListener('click', ()=>{
   viewDate = new Date();
   renderMonths(viewDate);
-  // Zu heute scrollen (wie beim Initialisieren)
-  setTimeout(()=>{
-    const today = new Date();
-    const sections = monthsContainer.querySelectorAll('.month-section');
-    for(const section of sections){
-      const secYear = Number(section.getAttribute('data-year'));
-      const secMonth = Number(section.getAttribute('data-month'));
-      if(secYear === today.getFullYear() && secMonth === today.getMonth()){
-        const dayRows = section.querySelectorAll('.day-row');
-        for(const row of dayRows){
-          const dayText = row.querySelector('.day-date div:last-child');
-          if(dayText && parseInt(dayText.textContent) === today.getDate()){
-            row.scrollIntoView({behavior: 'smooth', block: 'center'});
-            break;
-          }
-        }
-        break;
-      }
-    }
-    // Auch die Day-Panel öffnen für heute
-    openDay(today);
-  }, 50);
+  // Zu heute scrollen (exakt wie beim Init, aber mit Panel-Öffnung)
+  setTimeout(scrollToToday, 50);
 });
 
 // Mobile Date-Trigger - für Touch-Geräte ohne Chrome Context-Menü
@@ -629,6 +609,29 @@ document.getElementById('jumpToDate').addEventListener('change', e=>{
     openDay(targetDate);
   }, 50);
 });
+
+// Hilfsfunktion: Zu heute scrollen (wird auch beim Laden und Button-Klick verwendet)
+function scrollToToday(){
+  const today = new Date();
+  const sections = monthsContainer.querySelectorAll('.month-section');
+  for(const section of sections){
+    const secYear = Number(section.getAttribute('data-year'));
+    const secMonth = Number(section.getAttribute('data-month'));
+    if(secYear === today.getFullYear() && secMonth === today.getMonth()){
+      const dayRows = section.querySelectorAll('.day-row');
+      for(const row of dayRows){
+        const dayText = row.querySelector('.day-date div:last-child');
+        if(dayText && parseInt(dayText.textContent) === today.getDate()){
+          row.scrollIntoView({behavior: 'smooth', block: 'center'});
+          break;
+        }
+      }
+      break;
+    }
+  }
+  // Day-Panel auch für heute öffnen
+  openDay(today);
+}
 
 // scroll handling
 monthList.addEventListener('scroll', ()=>{
@@ -735,22 +738,4 @@ renderMonths(viewDate);
 initFirebase();
 
 // scroll to today on load
-setTimeout(()=>{
-  const today = new Date();
-  const sections = monthsContainer.querySelectorAll('.month-section');
-  for(const section of sections){
-    const secYear = Number(section.getAttribute('data-year'));
-    const secMonth = Number(section.getAttribute('data-month'));
-    if(secYear === today.getFullYear() && secMonth === today.getMonth()){
-      const dayRows = section.querySelectorAll('.day-row');
-      for(const row of dayRows){
-        const dayText = row.querySelector('.day-date div:last-child');
-        if(dayText && parseInt(dayText.textContent) === today.getDate()){
-          row.scrollIntoView({behavior: 'smooth', block: 'center'});
-          break;
-        }
-      }
-      break;
-    }
-  }
-}, 50);
+setTimeout(scrollToToday, 50);
