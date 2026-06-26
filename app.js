@@ -554,10 +554,16 @@ document.getElementById('importFile').addEventListener('change', async (e) => {
   reader.readAsText(file);
 });
 
-// navigation
-document.getElementById('prev').addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()-1); renderMonths(viewDate); });
-document.getElementById('next').addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()+1); renderMonths(viewDate); });
-document.getElementById('today').addEventListener('click', () => {
+// navigation - mit Fehlerprüfung für Button-Elemente
+const prevBtn = document.getElementById('prev');
+const nextBtn = document.getElementById('next');
+const todayBtn = document.getElementById('today');
+
+console.log('Buttons found:', {prevBtn, nextBtn, todayBtn});
+
+if (prevBtn) prevBtn.addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()-1); renderMonths(viewDate); });
+if (nextBtn) nextBtn.addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()+1); renderMonths(viewDate); });
+if (todayBtn) todayBtn.addEventListener('click', () => {
   alert('Heute-Button geklickt!');
   console.log('Today button clicked!');
   viewDate = new Date();
@@ -573,7 +579,9 @@ document.getElementById('today').addEventListener('click', () => {
       openDay(new Date());
     }, 300);
   }, 50);
-});
+}) else {
+  console.error('Today button not found in DOM!');
+}
 
 // Mobile Date-Trigger - für Touch-Geräte ohne Chrome Context-Menü
 const mobileDateTrigger = document.getElementById('mobileDateTrigger');
