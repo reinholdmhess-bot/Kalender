@@ -6,14 +6,14 @@
  - Anonyme Authentifizierung
 */
 
-console.log('App script starting...');
+console.log('App script loaded');
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
 import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
 import { getFirestore, collection, addDoc, setDoc, deleteDoc, doc, onSnapshot, query } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 
-console.log('Firebase imports loaded');
+console.log('Firebase modules imported');
 
 // Firebase Init
 const app = initializeApp(firebaseConfig);
@@ -769,3 +769,5 @@ initFirebase();
 
 // scroll to today on load
 setTimeout(scrollToToday, 50);
+
+console.log('App initialization complete');
