@@ -557,13 +557,20 @@ document.getElementById('importFile').addEventListener('change', async (e) => {
 // navigation
 document.getElementById('prev').addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()-1); renderMonths(viewDate); });
 document.getElementById('next').addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()+1); renderMonths(viewDate); });
-document.getElementById('today').addEventListener('click', ()=>{
+document.getElementById('today').addEventListener('click', () => {
+  console.log('Today button clicked!');
   viewDate = new Date();
+  console.log('viewDate set to:', viewDate);
   renderMonths(viewDate);
+  console.log('renderMonths called');
   // Zuerst scrollen, dann Panel öffnen
   setTimeout(()=>{
+    console.log('Setting up scroll timeout, calling scrollToToday');
     scrollToToday();
-    setTimeout(() => openDay(new Date()), 300);
+    setTimeout(() => {
+      console.log('Opening day panel');
+      openDay(new Date());
+    }, 300);
   }, 50);
 });
 
