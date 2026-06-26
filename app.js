@@ -301,9 +301,30 @@ function appendMonthToContainer(cur, holidays, curYear, curMonth){
         }
         pill.style.cursor = 'pointer';
 
-        // Touch-Handler für mobile Geräte (verhindert Chrome Context-Menü)
+        // Long-tap für Kontextmenü (mobile Geräte)
+        let pillTouchTimer = null;
         pill.addEventListener('touchstart', (e) => {
           e.preventDefault();
+          pillTouchTimer = setTimeout(() => {
+            const touch = e.touches[0];
+            const menu = document.getElementById('contextMenu');
+            menu.style.left = touch.clientX + 'px';
+            menu.style.top = touch.clientY + 'px';
+            menu.classList.remove('hidden');
+            menu.currentEventId = ev.id;
+          }, 500);
+        });
+        pill.addEventListener('touchend', (e) => {
+          if (pillTouchTimer) {
+            clearTimeout(pillTouchTimer);
+            pillTouchTimer = null;
+          }
+        });
+        pill.addEventListener('touchmove', (e) => {
+          if (pillTouchTimer) {
+            clearTimeout(pillTouchTimer);
+            pillTouchTimer = null;
+          }
         });
         pill.addEventListener('contextmenu', e=>{
           e.preventDefault();
@@ -324,9 +345,30 @@ function appendMonthToContainer(cur, holidays, curYear, curMonth){
         evt.textContent = (ev.time? ev.time + ' ':'') + ev.title;
         evt.setAttribute('data-event-id', ev.id);
 
-        // Touch-Handler für mobile Geräte (verhindert Chrome Context-Menü)
+        // Long-tap für Kontextmenü (mobile Geräte)
+        let evtTouchTimer = null;
         evt.addEventListener('touchstart', (e) => {
           e.preventDefault();
+          evtTouchTimer = setTimeout(() => {
+            const touch = e.touches[0];
+            const menu = document.getElementById('contextMenu');
+            menu.style.left = touch.clientX + 'px';
+            menu.style.top = touch.clientY + 'px';
+            menu.classList.remove('hidden');
+            menu.currentEventId = ev.id;
+          }, 500);
+        });
+        evt.addEventListener('touchend', (e) => {
+          if (evtTouchTimer) {
+            clearTimeout(evtTouchTimer);
+            evtTouchTimer = null;
+          }
+        });
+        evt.addEventListener('touchmove', (e) => {
+          if (evtTouchTimer) {
+            clearTimeout(evtTouchTimer);
+            evtTouchTimer = null;
+          }
         });
         evt.addEventListener('contextmenu', e=>{
           e.preventDefault();
@@ -515,7 +557,32 @@ document.getElementById('importFile').addEventListener('change', async (e) => {
 // navigation
 document.getElementById('prev').addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()-1); renderMonths(viewDate); });
 document.getElementById('next').addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()+1); renderMonths(viewDate); });
-document.getElementById('today').addEventListener('click', ()=>{ viewDate = new Date(); renderMonths(viewDate); });
+document.getElementById('today').addEventListener('click', ()=>{
+  viewDate = new Date();
+  renderMonths(viewDate);
+  // Zu heute scrollen (wie beim Initialisieren)
+  setTimeout(()=>{
+    const today = new Date();
+    const sections = monthsContainer.querySelectorAll('.month-section');
+    for(const section of sections){
+      const secYear = Number(section.getAttribute('data-year'));
+      const secMonth = Number(section.getAttribute('data-month'));
+      if(secYear === today.getFullYear() && secMonth === today.getMonth()){
+        const dayRows = section.querySelectorAll('.day-row');
+        for(const row of dayRows){
+          const dayText = row.querySelector('.day-date div:last-child');
+          if(dayText && parseInt(dayText.textContent) === today.getDate()){
+            row.scrollIntoView({behavior: 'smooth', block: 'center'});
+            break;
+          }
+        }
+        break;
+      }
+    }
+    // Auch die Day-Panel öffnen für heute
+    openDay(today);
+  }, 50);
+});
 
 // Mobile Date-Trigger - für Touch-Geräte ohne Chrome Context-Menü
 const mobileDateTrigger = document.getElementById('mobileDateTrigger');
