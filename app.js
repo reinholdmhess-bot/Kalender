@@ -467,7 +467,7 @@ function openEventForm(d){
   delete form.dataset.editId;
   // Datum vorbelegen - andere Felder zurücksetzen
   const dateValue = toISODate(d);
-  // Form-Elemente über form.elements oder querySelector referenzieren
+  // Form-Elemente über form.elements referenzieren
   form.elements.title.value = '';
   form.elements.date.value = dateValue;
   form.elements.time.value = '';
