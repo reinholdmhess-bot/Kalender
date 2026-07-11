@@ -465,17 +465,16 @@ function openEventForm(d){
   modal.classList.remove('hidden');
   document.getElementById('modalTitle').textContent = 'Neuer Termin';
   delete form.dataset.editId;
-  // Datum vorbelegen - andere Felder mit reset löschen
+  // Datum vorbelegen - andere Felder zurücksetzen
   const dateValue = toISODate(d);
-  // Andere Felder zurücksetzen
-  form.title.value = '';
-  form.time.value = '';
-  form.repeat.value = 'none';
-  form.birthYear.value = '';
-  form.desc.value = '';
-  // Datum gesetzt lassen (wird nicht zurückgesetzt)
-  form.date.value = dateValue;
-  form.time.focus();
+  // Form-Elemente über form.elements oder querySelector referenzieren
+  form.elements.title.value = '';
+  form.elements.date.value = dateValue;
+  form.elements.time.value = '';
+  form.elements.repeat.value = 'none';
+  form.elements.birthYear.value = '';
+  form.elements.desc.value = '';
+  form.elements.time.focus();
 }
 
 addBtn.addEventListener('click', ()=> openEventForm(viewDate));

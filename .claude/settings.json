@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "glob:*",
+      "grep:*",
+      "read_file:*",
+      "write_file:*",
+      "bash:git*",
+      "bash:npx firebase*",
+      "bash:npm*",
+      "bash:node --check*"
+    ]
+  }
+}

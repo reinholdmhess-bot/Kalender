@@ -1,14 +1,16 @@
-const CACHE_NAME = 'kalender-cache-v4'; // Neuer Cache nach Datum-Vorbelegung Fix
-const FILES = ['index.html','styles.css','app.js','manifest.json'];
+// Kein Caching - immer frisch vom Server
 self.addEventListener('install', e=>{
   self.skipWaiting();
-  e.waitUntil(caches.open(CACHE_NAME).then(c=>c.addAll(FILES)));
 });
+
+self.addEventListener('activate', e=>{
+  e.waitUntil(
+    caches.keys().then(names => Promise.all(names.map(n => caches.delete(n))))
+  );
+  self.clients.claim();
+});
+
 self.addEventListener('fetch', e=>{
-  // App.js nie aus dem Cache laden - immer frisch vom Server
-  if (e.request.url.includes('app.js')) {
-    e.respondWith(fetch(e.request));
-    return;
-  }
-  e.respondWith(caches.match(e.request).then(r=> r || fetch(e.request)));
+  // IMMER frisch vom Server laden - nie aus Cache
+  e.respondWith(fetch(e.request));
 });
