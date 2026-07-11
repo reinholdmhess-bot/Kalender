@@ -110,7 +110,7 @@ async function deleteEventFirebase(localId) {
   try {
     const eventRef = doc(db, 'publicEvents', localId);
     await deleteDoc(eventRef);
-    updateSyncStatus('↻ Lösche...', 'blue');
+    updateSyncStatus('✓ Gelöscht', 'green');
   } catch (error) {
     console.error('Fehler beim Löschen:', error);
     updateSyncStatus('⚠ Löschen fehlgeschlagen', 'red');
@@ -465,8 +465,16 @@ function openEventForm(d){
   modal.classList.remove('hidden');
   document.getElementById('modalTitle').textContent = 'Neuer Termin';
   delete form.dataset.editId;
-  form.reset();
-  form.date.value = toISODate(d);
+  // Datum vorbelegen - andere Felder mit reset löschen
+  const dateValue = toISODate(d);
+  // Andere Felder zurücksetzen
+  form.title.value = '';
+  form.time.value = '';
+  form.repeat.value = 'none';
+  form.birthYear.value = '';
+  form.desc.value = '';
+  // Datum gesetzt lassen (wird nicht zurückgesetzt)
+  form.date.value = dateValue;
   form.time.focus();
 }
 
