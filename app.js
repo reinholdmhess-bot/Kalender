@@ -25,16 +25,8 @@ let loadedMonths = new Set();
 let unsubscribe = null;
 let isOnline = true; // Firebase ist immer online, Watcher aktualisiert bei Fehlern
 
-// UI Elements
-const monthList = document.getElementById('monthList');
-const monthsContainer = document.getElementById('monthsContainer');
-const monthTitle = document.getElementById('monthTitle');
-const dayEvents = document.getElementById('dayEvents');
-const modal = document.getElementById('eventModal');
-const form = document.getElementById('eventForm');
-const addBtn = document.getElementById('addEvent');
-const cancelBtn = document.getElementById('cancel');
-const syncStatus = document.getElementById('syncStatus');
+// UI Elements - werden im DOMContentLoaded initialisiert
+let monthList, monthsContainer, monthTitle, dayEvents, modal, form, addBtn, cancelBtn, syncStatus;
 
 
 // Authentifizierung & Firebase-Listener
@@ -177,6 +169,7 @@ function germanyBW_Holidays(year) {
 
 // render
 function renderMonths(startDate, monthCount = 6){
+  if (!monthsContainer || !monthTitle) return;
   monthsContainer.innerHTML = '';
   loadedMonths.clear();
   const year = startDate.getFullYear();
@@ -390,6 +383,7 @@ function appendMonthToContainer(cur, holidays, curYear, curMonth){
 }
 
 function openDay(d){
+  if (!dayEvents) return;
   dayEvents.innerHTML = '';
   const iso = toISODate(d);
   const list = events.filter(ev=> ev.date===iso || (ev.repeat==='yearly' && (new Date(ev.date)).getDate()===d.getDate() && (new Date(ev.date)).getMonth()===d.getMonth()));
@@ -451,6 +445,7 @@ function openDay(d){
 function deleteEvent(eventId){
   deleteEventFirebase(eventId);
   renderMonths(viewDate);
+  if (!dayEvents) return;
   const firstLi = dayEvents.querySelector('li');
   if(firstLi){
     const evId = firstLi.getAttribute('data-event-id');
@@ -462,26 +457,26 @@ function deleteEvent(eventId){
 }
 
 function openEventForm(d){
+  if (!modal || !form) return;
   modal.classList.remove('hidden');
-  document.getElementById('modalTitle').textContent = 'Neuer Termin';
+  const modalTitleEl = document.getElementById('modalTitle');
+  if (modalTitleEl) modalTitleEl.textContent = 'Neuer Termin';
   delete form.dataset.editId;
   // Datum vorbelegen - andere Felder zurücksetzen
   const dateValue = toISODate(d);
   // Form-Elemente über form.elements referenzieren
-  form.elements.title.value = '';
-  form.elements.date.value = dateValue;
-  form.elements.time.value = '';
-  form.elements.repeat.value = 'none';
-  form.elements.birthYear.value = '';
-  form.elements.desc.value = '';
-  form.elements.time.focus();
+  if (form.elements.title) form.elements.title.value = '';
+  if (form.elements.date) form.elements.date.value = dateValue;
+  if (form.elements.time) form.elements.time.value = '';
+  if (form.elements.repeat) form.elements.repeat.value = 'none';
+  if (form.elements.birthYear) form.elements.birthYear.value = '';
+  if (form.elements.desc) form.elements.desc.value = '';
+  if (form.elements.time) form.elements.time.focus();
 }
 
-addBtn.addEventListener('click', ()=> openEventForm(viewDate));
-cancelBtn.addEventListener('click', ()=> modal.classList.add('hidden'));
-
-form.addEventListener('submit', async (e) => {
+async function handleFormSubmit(e) {
   e.preventDefault();
+  if (!form) return;
   const fd = new FormData(form);
   const editId = form.dataset.editId;
 
@@ -519,115 +514,12 @@ form.addEventListener('submit', async (e) => {
     events.push(ev);
     await saveEvent(ev);
   }
-  modal.classList.add('hidden');
-});
-
-// export
-document.getElementById('exportBtn').addEventListener('click', () => {
-  const json = JSON.stringify(events, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'kalender-' + new Date().toISOString().slice(0, 10) + '.json';
-  a.click();
-  URL.revokeObjectURL(url);
-});
-
-document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importFile').click());
-
-document.getElementById('importFile').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async (ev) => {
-    try {
-      const imported = JSON.parse(ev.target.result);
-      if (Array.isArray(imported)) {
-        for (const item of imported) {
-          // Temporäre ID für sofortige Anzeige
-          item.id = 'local-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-          events.push(item);
-          await saveEvent(item);
-        }
-        alert('Termine importiert!');
-      } else {
-        alert('Ungültiges Format');
-      }
-    } catch (err) {
-      alert('Fehler beim Importieren: ' + err.message);
-    }
-  };
-  reader.readAsText(file);
-});
-
-// navigation - mit Fehlerprüfung für Button-Elemente
-const prevBtn = document.getElementById('prev');
-const nextBtn = document.getElementById('next');
-const todayBtn = document.getElementById('today');
-
-if (prevBtn) prevBtn.addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()-1); renderMonths(viewDate); });
-if (nextBtn) nextBtn.addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()+1); renderMonths(viewDate); });
-if (todayBtn) {
-  todayBtn.addEventListener('click', () => {
-    viewDate = new Date();
-    renderMonths(viewDate);
-    // Zuerst scrollen, dann Panel öffnen
-    setTimeout(()=>{
-      scrollToToday();
-      setTimeout(() => openDay(new Date()), 300);
-    }, 50);
-  });
+  if (modal) modal.classList.add('hidden');
 }
-
-// Mobile Date-Trigger - für Touch-Geräte ohne Chrome Context-Menü
-const mobileDateTrigger = document.getElementById('mobileDateTrigger');
-const jumpToDateInput = document.getElementById('jumpToDate');
-if (mobileDateTrigger) {
-  mobileDateTrigger.addEventListener('click', () => {
-    jumpToDateInput.showPicker(); // Öffnet den Date-Picker ohne fokussieren
-  });
-}
-// Schütze vor touch-Interaktionen (verhindert Chrome Context-Menü und Zoom-Fokussierung)
-jumpToDateInput.addEventListener('touchstart', (e) => {
-  e.stopPropagation();
-});
-jumpToDateInput.addEventListener('touchend', (e) => {
-  e.preventDefault(); // Verhindert Chrome's context menu
-});
-
-document.getElementById('jumpToDate').addEventListener('change', e=>{
-  const dateStr = e.target.value;
-  if(!dateStr) return;
-  const [year, month, day] = dateStr.split('-').map(Number);
-  const targetDate = new Date(year, month - 1, day);
-  const targetMonth = new Date(year, month - 1, 1);
-  renderMonths(targetMonth);
-  setTimeout(()=>{
-    const sections = monthsContainer.querySelectorAll('.month-section');
-    for(const section of sections){
-      const secYear = Number(section.getAttribute('data-year'));
-      const secMonth = Number(section.getAttribute('data-month'));
-      if(secYear === year && secMonth === month - 1){
-        const dayRows = section.querySelectorAll('.day-row');
-        for(const row of dayRows){
-          const dayText = row.querySelector('.day-date div:last-child');
-          if(dayText && parseInt(dayText.textContent) === day){
-            row.style.backgroundColor = '#fff3cd';
-            row.scrollIntoView({behavior: 'smooth', block: 'center'});
-            setTimeout(()=> row.style.backgroundColor = '', 2000);
-            break;
-          }
-        }
-        break;
-      }
-    }
-    openDay(targetDate);
-  }, 50);
-});
 
 // Hilfsfunktion: Zu heute scrollen
 function scrollToToday(){
+  if (!monthsContainer) return;
   const today = new Date();
   const sections = monthsContainer.querySelectorAll('.month-section');
   for(const section of sections){
@@ -647,109 +539,247 @@ function scrollToToday(){
   }
 }
 
-// scroll handling
-monthList.addEventListener('scroll', ()=>{
-  const sections = monthsContainer.querySelectorAll('.month-section');
-  if(sections.length === 0) return;
-
-  let firstVisibleMonth = null;
-  for(const section of sections){
-    const rect = section.getBoundingClientRect();
-    if(rect.top < monthList.clientHeight && rect.bottom > 0){
-      firstVisibleMonth = section;
-      break;
-    }
-  }
-
-  if(firstVisibleMonth){
-    const year = Number(firstVisibleMonth.getAttribute('data-year'));
-    const month = Number(firstVisibleMonth.getAttribute('data-month'));
-    monthTitle.textContent = new Date(year, month, 1).toLocaleString('de-DE', {month:'long', year:'numeric'});
-  }
-
-  if(monthList.scrollHeight - monthList.scrollTop - monthList.clientHeight < 300){
-    const lastSection = sections[sections.length - 1];
-    if(lastSection){
-      const lastYear = Number(lastSection.getAttribute('data-year'));
-      const lastMonth = Number(lastSection.getAttribute('data-month'));
-      const nextDate = new Date(lastYear, lastMonth + 1, 1);
-
-      const holidays = {};
-      for(let y = nextDate.getFullYear(); y <= nextDate.getFullYear() + 1; y++){
-        germanyBW_Holidays(y).forEach(h => { holidays[h.date] = h.name; });
-      }
-
-      for(let i = 0; i < 3; i++){
-        const checkDate = new Date(nextDate.getFullYear(), nextDate.getMonth() + i, 1);
-        const monthKey = `${checkDate.getFullYear()}-${checkDate.getMonth()}`;
-        if(!loadedMonths.has(monthKey)){
-          loadedMonths.add(monthKey);
-          appendMonthToContainer(checkDate, holidays, checkDate.getFullYear(), checkDate.getMonth());
-        }
-      }
-    }
-  }
-});
-
-// Kontextmenü schließen
-document.addEventListener('click', e=>{
-  const menu = document.getElementById('contextMenu');
-  if(!menu.contains(e.target)){
-    menu.classList.add('hidden');
-  }
-});
-
 // Bearbeiten via Kontext-Menü
 function editEvent(eventId){
+  if (!modal || !form) return;
   const ev = events.find(e => e.id === eventId);
   if(!ev) return;
   modal.classList.remove('hidden');
-  document.getElementById('modalTitle').textContent = 'Termin bearbeiten';
-  form.title.value = ev.title || '';
-  form.date.value = ev.date || '';
-  form.time.value = ev.time || '';
-  form.repeat.value = ev.repeat || 'none';
-  form.birthYear.value = ev.birthYear || '';
-  form.desc.value = ev.desc || '';
+  const modalTitleEl = document.getElementById('modalTitle');
+  if (modalTitleEl) modalTitleEl.textContent = 'Termin bearbeiten';
+  if (form.elements.title) form.elements.title.value = ev.title || '';
+  if (form.elements.date) form.elements.date.value = ev.date || '';
+  if (form.elements.time) form.elements.time.value = ev.time || '';
+  if (form.elements.repeat) form.elements.repeat.value = ev.repeat || 'none';
+  if (form.elements.birthYear) form.elements.birthYear.value = ev.birthYear || '';
+  if (form.elements.desc) form.elements.desc.value = ev.desc || '';
   // Speicher-ID für Update
   form.dataset.editId = eventId;
 }
 
-// Löschen via Kontext-Menü
-document.getElementById('deleteMenuOption').addEventListener('click', ()=>{
-  const menu = document.getElementById('contextMenu');
-  const eventId = menu.currentEventId;
-  if(eventId && confirm('Termin wirklich löschen?')){
-    deleteEvent(eventId);
-  }
-  menu.classList.add('hidden');
-});
 
-// Bearbeiten-Handler
-document.getElementById('editMenuOption').addEventListener('click', ()=>{
-  const menu = document.getElementById('contextMenu');
-  const eventId = menu.currentEventId;
-  if(eventId){
-    editEvent(eventId);
-  }
-  menu.classList.add('hidden');
-});
+// init - wartet bis DOM vollständig geladen ist
+document.addEventListener('DOMContentLoaded', () => {
+  // UI Elemente erst nach DOM-Ready holen
+  monthList = document.getElementById('monthList');
+  monthsContainer = document.getElementById('monthsContainer');
+  monthTitle = document.getElementById('monthTitle');
+  dayEvents = document.getElementById('dayEvents');
+  modal = document.getElementById('eventModal');
+  form = document.getElementById('eventForm');
+  addBtn = document.getElementById('addEvent');
+  cancelBtn = document.getElementById('cancel');
+  syncStatus = document.getElementById('syncStatus');
 
-// Delete-Taste
-document.addEventListener('keydown', e=>{
-  if(e.key === 'Delete'){
-    const focused = document.activeElement;
-    const eventId = focused?.getAttribute?.('data-event-id');
-    if(eventId && confirm('Termin wirklich löschen?')){
-      deleteEvent(eventId);
+  // Event-Listener für Form
+  if (form) {
+    form.addEventListener('submit', handleFormSubmit);
+  }
+
+  // Event-Listener für Buttons
+  if (addBtn) addBtn.addEventListener('click', () => openEventForm(viewDate));
+  if (cancelBtn) cancelBtn.addEventListener('click', () => modal.classList.add('hidden'));
+
+  // Export/Import Handler
+  const exportBtn = document.getElementById('exportBtn');
+  const importBtn = document.getElementById('importBtn');
+  const importFile = document.getElementById('importFile');
+
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      const json = JSON.stringify(events, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'kalender-' + new Date().toISOString().slice(0, 10) + '.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+  if (importBtn && importFile) {
+    importBtn.addEventListener('click', () => importFile.click());
+    importFile.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        try {
+          const imported = JSON.parse(ev.target.result);
+          if (Array.isArray(imported)) {
+            for (const item of imported) {
+              item.id = 'local-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+              events.push(item);
+              await saveEvent(item);
+            }
+            alert('Termine importiert!');
+          } else {
+            alert('Ungültiges Format');
+          }
+        } catch (err) {
+          alert('Fehler beim Importieren: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  // Navigation Handler
+  const prevBtn = document.getElementById('prev');
+  const nextBtn = document.getElementById('next');
+  const todayBtn = document.getElementById('today');
+
+  if (prevBtn) prevBtn.addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()-1); renderMonths(viewDate); });
+  if (nextBtn) nextBtn.addEventListener('click', ()=>{ viewDate.setMonth(viewDate.getMonth()+1); renderMonths(viewDate); });
+  if (todayBtn) {
+    todayBtn.addEventListener('click', () => {
+      viewDate = new Date();
+      renderMonths(viewDate);
+      setTimeout(()=>{
+        scrollToToday();
+        setTimeout(() => openDay(new Date()), 300);
+      }, 50);
+    });
+  }
+
+  // Mobile Date-Trigger Handler
+  const mobileDateTrigger = document.getElementById('mobileDateTrigger');
+  const jumpToDateInput = document.getElementById('jumpToDate');
+
+  if (mobileDateTrigger && jumpToDateInput) {
+    mobileDateTrigger.addEventListener('click', () => {
+      jumpToDateInput.showPicker();
+    });
+    jumpToDateInput.addEventListener('touchstart', (e) => {
+      e.stopPropagation();
+    });
+    jumpToDateInput.addEventListener('touchend', (e) => {
+      e.preventDefault();
+    });
+    jumpToDateInput.addEventListener('change', e=>{
+      const dateStr = e.target.value;
+      if(!dateStr) return;
+      const [year, month, day] = dateStr.split('-').map(Number);
+      const targetDate = new Date(year, month - 1, day);
+      const targetMonth = new Date(year, month - 1, 1);
+      renderMonths(targetMonth);
+      setTimeout(()=>{
+        const sections = monthsContainer.querySelectorAll('.month-section');
+        for(const section of sections){
+          const secYear = Number(section.getAttribute('data-year'));
+          const secMonth = Number(section.getAttribute('data-month'));
+          if(secYear === year && secMonth === month - 1){
+            const dayRows = section.querySelectorAll('.day-row');
+            for(const row of dayRows){
+              const dayText = row.querySelector('.day-date div:last-child');
+              if(dayText && parseInt(dayText.textContent) === day){
+                row.style.backgroundColor = '#fff3cd';
+                row.scrollIntoView({behavior: 'smooth', block: 'center'});
+                setTimeout(()=> row.style.backgroundColor = '', 2000);
+                break;
+              }
+            }
+            break;
+          }
+        }
+        openDay(targetDate);
+      }, 50);
+    });
+  }
+
+  // Scroll Handler
+  if (monthList) {
+    monthList.addEventListener('scroll', ()=>{
+      const sections = monthsContainer.querySelectorAll('.month-section');
+      if(sections.length === 0) return;
+
+      let firstVisibleMonth = null;
+      for(const section of sections){
+        const rect = section.getBoundingClientRect();
+        if(rect.top < monthList.clientHeight && rect.bottom > 0){
+          firstVisibleMonth = section;
+          break;
+        }
+      }
+
+      if(firstVisibleMonth){
+        const y = Number(firstVisibleMonth.getAttribute('data-year'));
+        const m = Number(firstVisibleMonth.getAttribute('data-month'));
+        monthTitle.textContent = new Date(y, m, 1).toLocaleString('de-DE', {month:'long', year:'numeric'});
+      }
+
+      if(monthList.scrollHeight - monthList.scrollTop - monthList.clientHeight < 300){
+        const lastSection = sections[sections.length - 1];
+        if(lastSection){
+          const lastYear = Number(lastSection.getAttribute('data-year'));
+          const lastMonth = Number(lastSection.getAttribute('data-month'));
+          const nextDate = new Date(lastYear, lastMonth + 1, 1);
+
+          const holidays = {};
+          for(let y = nextDate.getFullYear(); y <= nextDate.getFullYear() + 1; y++){
+            germanyBW_Holidays(y).forEach(h => { holidays[h.date] = h.name; });
+          }
+
+          for(let i = 0; i < 3; i++){
+            const checkDate = new Date(nextDate.getFullYear(), nextDate.getMonth() + i, 1);
+            const monthKey = `${checkDate.getFullYear()}-${checkDate.getMonth()}`;
+            if(!loadedMonths.has(monthKey)){
+              loadedMonths.add(monthKey);
+              appendMonthToContainer(checkDate, holidays, checkDate.getFullYear(), checkDate.getMonth());
+            }
+          }
+        }
+      }
+    });
+  }
+
+  // Kontextmenü Handler
+  const deleteMenuOption = document.getElementById('deleteMenuOption');
+  const editMenuOption = document.getElementById('editMenuOption');
+
+  if (deleteMenuOption) {
+    deleteMenuOption.addEventListener('click', ()=>{
+      const menu = document.getElementById('contextMenu');
+      const eventId = menu?.currentEventId;
+      if(eventId && confirm('Termin wirklich löschen?')){
+        deleteEvent(eventId);
+      }
+      menu?.classList.add('hidden');
+    });
+  }
+  if (editMenuOption) {
+    editMenuOption.addEventListener('click', ()=>{
+      const menu = document.getElementById('contextMenu');
+      const eventId = menu?.currentEventId;
+      if(eventId){
+        editEvent(eventId);
+      }
+      menu?.classList.add('hidden');
+    });
+  }
+
+  // Delete-Taste Handler
+  document.addEventListener('keydown', e=>{
+    if(e.key === 'Delete'){
+      const focused = document.activeElement;
+      const eventId = focused?.getAttribute?.('data-event-id');
+      if(eventId && confirm('Termin wirklich löschen?')){
+        deleteEvent(eventId);
+      }
     }
-  }
+  });
+
+  // Kontextmenü schließen
+  document.addEventListener('click', e=>{
+    const menu = document.getElementById('contextMenu');
+    if(menu && !menu.contains(e.target)){
+      menu.classList.add('hidden');
+    }
+  });
+
+  renderMonths(viewDate);
+  initFirebase();
+
+  // scroll to today on load
+  setTimeout(scrollToToday, 50);
 });
-
-
-// init
-renderMonths(viewDate);
-initFirebase();
-
-// scroll to today on load
-setTimeout(scrollToToday, 50);
